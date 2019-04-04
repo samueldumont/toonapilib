@@ -45,6 +45,7 @@ from .helpers import (Agreement,
                       SmartPlug,
                       SmokeDetector,
                       Solar,
+                      Water,
                       ThermostatInfo,
                       ThermostatState,
                       Token,
@@ -400,7 +401,7 @@ class Toon:  # pylint: disable=too-many-instance-attributes,too-many-public-meth
     def water(self):
         """:return: A solar object modeled as a named tuple"""
         water = self._get_status_value('waterUsage')
-        return Solar(water.get('value'),
+        return Water(water.get('value'),
                      water.get('dayCost'),
                      water.get('avgDayValue'),
                      water.get('avgValue'),

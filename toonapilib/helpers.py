@@ -70,6 +70,13 @@ Usage = namedtuple('Usage', ('average_daily',
 
 Low = namedtuple('Low', ('meter_reading_low', 'daily_usage_low'))
 
+Water = namedtuple('Water', ('value',
+                             'daily_cost',
+                             'average_daily',
+                             'average',
+                             'daily_usage',
+                             'meter_reading'))
+
 Solar = namedtuple('Solar', ('maximum',
                              'produced',
                              'value',
@@ -261,7 +268,8 @@ class Switch:
         else:
             url = '{api_url}/devices/{id}'.format(api_url=self.toon._api_url,  # pylint: disable=protected-access
                                                   id=self.device_uuid)
-            data = requests.get(url, headers=self.toon._headers).json()  # pylint: disable=protected-access
+            data = requests.get(url, headers=self.toon._headers).json(
+            )  # pylint: disable=protected-access
             data["currentState"] = int(state)
             response = requests.put(url,
                                     data=json.dumps(data),
