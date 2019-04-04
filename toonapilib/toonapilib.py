@@ -169,8 +169,10 @@ class Toon:  # pylint: disable=too-many-instance-attributes,too-many-public-meth
                                          agreement.get('agreementIdChecksum'),
                                          agreement.get('heatingType'),
                                          agreement.get('displayCommonName'),
-                                         agreement.get('displayHardwareVersion'),
-                                         agreement.get('displaySoftwareVersion'),
+                                         agreement.get(
+                                             'displayHardwareVersion'),
+                                         agreement.get(
+                                             'displaySoftwareVersion'),
                                          agreement.get('isToonSolar'),
                                          agreement.get('isToonly'))
                                for agreement in agreements]
@@ -190,7 +192,8 @@ class Toon:  # pylint: disable=too-many-instance-attributes,too-many-public-meth
 
         """
         if display_common_name.lower() not in self.display_names:
-            self._logger.error('No agreement with display name %s', display_common_name)
+            self._logger.error(
+                'No agreement with display name %s', display_common_name)
             return False
         agreement = next((agreement for agreement in self.agreements
                           if agreement.display_common_name.lower() == display_common_name.lower()), None)
@@ -257,7 +260,8 @@ class Toon:  # pylint: disable=too-many-instance-attributes,too-many-public-meth
         self._logger.debug('Using patched request for url %s', url)
         response = self.original_request(*args, **kwargs)
         if not url.startswith(self._base_url):
-            self._logger.debug('Url "%s" requested is not from toon api, passing through', url)
+            self._logger.debug(
+                'Url "%s" requested is not from toon api, passing through', url)
             return response
         try:
             response_json = response.json()
@@ -393,6 +397,17 @@ class Toon:  # pylint: disable=too-many-instance-attributes,too-many-public-meth
                      power.get('dayCostProduced'))
 
     @property
+    def water(self):
+        """:return: A solar object modeled as a named tuple"""
+        water = self._get_status_value('waterUsage')
+        return Solar(water.get('value'),
+                     water.get('dayCost'),
+                     water.get('avgDayValue'),
+                     water.get('avgValue'),
+                     water.get('dayUsage'),
+                     water.get('meterReading'))
+
+    @property
     def thermostat_info(self):
         """:return: A thermostatinfo object modeled as a named tuple"""
         info = self._get_status_value('thermostatInfo')
@@ -483,7 +498,8 @@ class Toon:  # pylint: disable=too-many-instance-attributes,too-many-public-meth
         data = requests.get(url, headers=self._headers).json()
         data["activeState"] = id_
         data["programState"] = 2
-        data["currentSetpoint"] = self.get_thermostat_state_by_id(id_).temperature
+        data["currentSetpoint"] = self.get_thermostat_state_by_id(
+            id_).temperature
         response = requests.put(url,
                                 data=json.dumps(data),
                                 headers=self._headers)
