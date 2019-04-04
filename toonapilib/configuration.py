@@ -4,8 +4,7 @@
 """A place to store the configuration."""
 
 
-STATE_CACHING_SECONDS = 30
-REQUEST_TIMEOUT = 9
+STATE_CACHING_SECONDS = 300
 
 STATES = {0: 'Comfort',
           1: 'Home',
@@ -18,3 +17,7 @@ BURNER_STATES = {0: 'off',
                  1: 'on',
                  2: 'water_heating',
                  3: 'pre_heating'}
+
+PROGRAM_STATES = {0: 'off',
+                  1: 'on',
+                  2: 'manual'}

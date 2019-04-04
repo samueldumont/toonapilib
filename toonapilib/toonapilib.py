@@ -35,9 +35,10 @@ import json
 import logging
 
 import requests
+import coloredlogs
 from cachetools import TTLCache, cached
 
-from .configuration import STATES, STATE_CACHING_SECONDS, BURNER_STATES
+from .configuration import STATES, STATE_CACHING_SECONDS, BURNER_STATES, PROGRAM_STATES
 from .helpers import (Agreement,
                       Light,
                       PowerUsage,
@@ -47,13 +48,17 @@ from .helpers import (Agreement,
                       ThermostatInfo,
                       ThermostatState,
                       Token,
-                      Usage)
+                      Usage,
+                      Data)
 from .toonapilibexceptions import (InvalidCredentials,
                                    InvalidThermostatState,
+                                   InvalidProgramState,
                                    InvalidConsumerKey,
                                    InvalidConsumerSecret,
                                    IncompleteStatus,
                                    AgreementsRetrievalError)
+
+coloredlogs.auto_install()
 
 __author__ = '''Costas Tyfoxylos <costas.tyf@gmail.com>'''
 __docformat__ = '''google'''
@@ -65,16 +70,16 @@ __maintainer__ = '''Costas Tyfoxylos'''
 __email__ = '''<costas.tyf@gmail.com>'''
 __status__ = '''Development'''  # "Prototype", "Development", "Production".
 
-
 # This is the main prefix used for logging
 LOGGER_BASENAME = '''toonapilib'''
 LOGGER = logging.getLogger(LOGGER_BASENAME)
 LOGGER.addHandler(logging.NullHandler())
 
 STATE_CACHE = TTLCache(maxsize=1, ttl=STATE_CACHING_SECONDS)
+EXPIRED_TOKEN_FAULT_STRING = 'Access Token expired'
 
 
-class Toon(object):  # pylint: disable=too-many-instance-attributes,too-many-public-methods
+class Toon:  # pylint: disable=too-many-instance-attributes,too-many-public-methods
     """Model of the toon smart meter from eneco."""
 
     def __init__(self,  # pylint: disable=too-many-arguments
@@ -98,6 +103,7 @@ class Toon(object):  # pylint: disable=too-many-instance-attributes,too-many-pub
         self.agreement = None
         self._headers = None
         self._token = None
+        self.data = Data(self)
         self._authenticate()
         if display_common_name:
             self.enable_by_display_common_name(display_common_name)
@@ -114,7 +120,7 @@ class Toon(object):  # pylint: disable=too-many-instance-attributes,too-many-pub
 
     def _get_challenge_code(self):
         url = '{base_url}/authorize'.format(base_url=self._base_url)
-        params = {'tenant_id': 'eneco',
+        params = {'tenant_id': self._tenant_id,
                   'response_type': 'code',
                   'redirect_uri': 'http://127.0.0.1',
                   'client_id': self._client_id}
@@ -238,7 +244,7 @@ class Toon(object):  # pylint: disable=too-many-instance-attributes,too-many-pub
         try:
             data = response.json()
         except ValueError:
-            self._logger.debug('No json on response :{}'.format(response.text))
+            self._logger.debug('No json on response :%s', response.text)
             raise IncompleteStatus
         return data
 
@@ -246,9 +252,13 @@ class Toon(object):  # pylint: disable=too-many-instance-attributes,too-many-pub
         self.original_request = requests.get  # pylint: disable=attribute-defined-outside-init
         requests.get = self._patched_request
 
-    def _patched_request(self, url, **kwargs):
-        self._logger.debug('Using patched request for url {}'.format(url))
-        response = self.original_request(url, **kwargs)
+    def _patched_request(self, *args, **kwargs):
+        url = args[0]
+        self._logger.debug('Using patched request for url %s', url)
+        response = self.original_request(*args, **kwargs)
+        if not url.startswith(self._base_url):
+            self._logger.debug('Url "%s" requested is not from toon api, passing through', url)
+            return response
         try:
             response_json = response.json()
         except ValueError:
@@ -256,20 +266,31 @@ class Toon(object):  # pylint: disable=too-many-instance-attributes,too-many-pub
                        'response was:{}').format(response.text)
             response_json = {}
             self._logger.debug(message)
-        if response.status_code == 401 and response_json.get('fault', {}).get(
-                'faultstring', '') == 'Access Token expired':
+        if response.status_code == 401 and \
+                response_json.get('fault', {}).get('faultstring', '') == EXPIRED_TOKEN_FAULT_STRING:
             self._logger.info('Expired token detected, trying to refresh!')
             self._token = self._refresh_token()
             self._set_headers(self._token)
             kwargs['headers'].update(
                 {'Authorization': 'Bearer {}'.format(self._token.access_token)})
             self._logger.debug('Updated headers, trying again initial request')
-            response = self.original_request(url, **kwargs)
+            response = self.original_request(*args, **kwargs)
         return response
 
     def _clear_cache(self):
         self._logger.debug('Clearing state cache.')
         STATE_CACHE.clear()
+
+    def _get_endpoint_data(self, endpoint, params=None):
+        url = '{base}{endpoint}'.format(base=self._api_url,
+                                        endpoint=endpoint)
+
+        response = requests.get(url, params=params, headers=self._headers)
+        if not response.ok:
+            self._logger.error(response.content)
+            return {}
+        self._logger.debug('Response received {}'.format(response.content))
+        return response.json()
 
     @property
     def smokedetectors(self):
@@ -461,6 +482,8 @@ class Toon(object):  # pylint: disable=too-many-instance-attributes,too-many-pub
         url = '{api_url}/thermostat'.format(api_url=self._api_url)
         data = requests.get(url, headers=self._headers).json()
         data["activeState"] = id_
+        data["programState"] = 2
+        data["currentSetpoint"] = self.get_thermostat_state_by_id(id_).temperature
         response = requests.put(url,
                                 data=json.dumps(data),
                                 headers=self._headers)
@@ -474,7 +497,7 @@ class Toon(object):  # pylint: disable=too-many-instance-attributes,too-many-pub
         :return: A float of the current setting of the temperature of the
         thermostat
         """
-        return float(self.thermostat_info.current_set_point / 100)
+        return self.thermostat_info.current_set_point / 100.0
 
     @thermostat.setter
     def thermostat(self, temperature):
@@ -490,17 +513,45 @@ class Toon(object):  # pylint: disable=too-many-instance-attributes,too-many-pub
         url = '{api_url}/thermostat'.format(api_url=self._api_url)
         response = requests.get(url, headers=self._headers)
         if not response.ok:
-            self._logger.error(response.json)
+            self._logger.error(response.content)
             return
         data = response.json()
         data["currentSetpoint"] = target
         data["activeState"] = -1
+        data["programState"] = 2
         response = requests.put(url,
                                 data=json.dumps(data),
                                 headers=self._headers)
         if not response.ok:
-            self._logger.error(response.json)
+            self._logger.error(response.content)
             return
+        self._logger.debug('Response received {}'.format(response.content))
+        self._clear_cache()
+
+    @property
+    def program_state(self):
+        """The active program state of the thermostat.
+
+        :return: the program state
+        """
+        return PROGRAM_STATES.get(int(self.thermostat_info.program_state))
+
+    @program_state.setter
+    def program_state(self, name):
+        """Changes the thermostat program state to the one passed as an argument
+
+        :param name: The program state to change to.
+        """
+        id_ = next((id_ for id_, state in PROGRAM_STATES.items()
+                    if state.lower() == name.lower()), None)
+        if id_ is None:
+            raise InvalidProgramState(name)
+        url = '{api_url}/thermostat'.format(api_url=self._api_url)
+        data = requests.get(url, headers=self._headers).json()
+        data["programState"] = id_
+        response = requests.put(url,
+                                data=json.dumps(data),
+                                headers=self._headers)
         self._logger.debug('Response received {}'.format(response.content))
         self._clear_cache()
 
@@ -510,4 +561,4 @@ class Toon(object):  # pylint: disable=too-many-instance-attributes,too-many-pub
 
         :return: A float of the current temperature
         """
-        return float(self.thermostat_info.current_displayed_temperature / 100)
+        return self.thermostat_info.current_displayed_temperature / 100.0
