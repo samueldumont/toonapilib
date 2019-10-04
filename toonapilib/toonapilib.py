@@ -414,6 +414,7 @@ class Toon:  # pylint: disable=too-many-instance-attributes,too-many-public-meth
         info = self._get_status_value('thermostatInfo')
         return ThermostatInfo(info.get('activeState'),
                               info.get('boilerModuleConnected'),
+                              info.get('currentHumidity'),
                               info.get('burnerInfo'),
                               info.get('currentDisplayTemp'),
                               info.get('currentModulationLevel'),
