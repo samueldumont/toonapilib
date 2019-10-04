@@ -34,8 +34,6 @@ Main code for toonapilib
 import json
 import logging
 
-import pprint
-
 import requests
 import coloredlogs
 from cachetools import TTLCache, cached
@@ -234,10 +232,8 @@ class Toon:  # pylint: disable=too-many-instance-attributes,too-many-public-meth
     def _retrieve_token(self, payload):
         headers = {'content-type': 'application/x-www-form-urlencoded'}
         url = '{base_url}/token'.format(base_url=self._base_url)
-        pprint.pprint(payload)
         response = requests.post(url, headers=headers, data=payload)
         tokens = response.json()
-        pprint.pprint(tokens)
         self._logger.debug(tokens)
         token_values = [tokens.get(key) for key in Token._fields]
         if not all(token_values):
