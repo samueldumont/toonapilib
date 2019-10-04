@@ -34,6 +34,8 @@ Main code for toonapilib
 import json
 import logging
 
+import pprint
+
 import requests
 import coloredlogs
 from cachetools import TTLCache, cached
@@ -120,6 +122,7 @@ class Toon:  # pylint: disable=too-many-instance-attributes,too-many-public-meth
         return [agreement.display_common_name.lower() for agreement in self.agreements]
 
     def _get_challenge_code(self):
+        print("TEST")
         url = '{base_url}/authorize'.format(base_url=self._base_url)
         params = {'tenant_id': self._tenant_id,
                   'response_type': 'code',
@@ -147,10 +150,21 @@ class Toon:  # pylint: disable=too-many-instance-attributes,too-many-public-meth
             raise InvalidCredentials(response.text)
         return code
 
+    def _get_headless_token(self):
+        payload = {'username': self._username,
+                   'password': self._password,
+                   'tenant_id': self._tenant_id,
+                   'client_secret': self._client_secret,
+                   'grant_type': 'password',
+                   'client_id': self._client_id,
+                   'state': '',
+                   'scope': ''}
+        return self._retrieve_token(payload)
+
     def _authenticate(self):
         self._monkey_patch_requests()
-        code = self._get_challenge_code()
-        self._token = self._get_token(code)
+        #code = self._get_challenge_code()
+        self._token = self._get_headless_token()
         self._set_headers(self._token)
         self._get_agreements()
         self._api_url = '{}/toon/v3/{}'.format(self._base_url,
@@ -220,8 +234,10 @@ class Toon:  # pylint: disable=too-many-instance-attributes,too-many-public-meth
     def _retrieve_token(self, payload):
         headers = {'content-type': 'application/x-www-form-urlencoded'}
         url = '{base_url}/token'.format(base_url=self._base_url)
+        pprint.pprint(payload)
         response = requests.post(url, headers=headers, data=payload)
         tokens = response.json()
+        pprint.pprint(tokens)
         self._logger.debug(tokens)
         token_values = [tokens.get(key) for key in Token._fields]
         if not all(token_values):

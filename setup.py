@@ -22,7 +22,7 @@ except ImportError:
 
 readme = open('README.rst').read()
 history = open('HISTORY.rst').read().replace('.. :changelog:', '')
-version = open('.VERSION').read()
+version = open('.VERSION').read().rstrip()
 
 
 setup(
