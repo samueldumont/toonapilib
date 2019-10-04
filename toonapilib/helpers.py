@@ -46,6 +46,7 @@ ThermostatState = namedtuple('ThermostatState', ('name',
 
 ThermostatInfo = namedtuple('ThermostatInfo', ('active_state',
                                                'boiler_connected',
+                                               'current_humidity',
                                                'burner_info',
                                                'current_displayed_temperature',
                                                'current_modulation_level',
